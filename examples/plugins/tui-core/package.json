@@ -1,0 +1,14 @@
+{
+  "name": "@dsh-nix/tui-core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./plugin": "./plugin.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "cordis.patch.yml"
+    }
+  }
+}

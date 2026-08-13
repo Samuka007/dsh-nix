@@ -1,0 +1,7 @@
+- insert:
+    - id: dsh-nix-tui-core-lifecycle
+      name: ./node_modules/@dsh-nix/tui-core/plugin.mjs
+      config:
+        markerPath: !!js dshHomePath('tui-fixture-lifecycle.log')
+        activatedMarker: activated
+        disposedMarker: disposed
