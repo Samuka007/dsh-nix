@@ -19,8 +19,12 @@
   description = "Nix-native DSH profile packager";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  inputs.dsh = {
+    url = "github:deepseek-ai/deepseek-harness/47f943859bef60e4160492346772ded9b24f765a";
+    flake = false;
+  };
 
-  outputs = { self, nixpkgs }:
+  outputs = { self, nixpkgs, dsh }:
     let
       lib = nixpkgs.lib;
       systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
@@ -40,6 +44,8 @@
           pkgs = nixpkgs.legacyPackages.${system};
         in
         {
+          dsh = pkgs.callPackage ./pkgs/dsh.nix { src = dsh; };
+
           tui = profilesLib.buildProfileBundle {
             inherit pkgs;
             profile = profiles.tui;
