@@ -2,22 +2,8 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-DSH_REPO=${DSH_REPO:-"$repo_root/dsh"}
 timeout_seconds=${DSH_PROFILE_SMOKE_TIMEOUT_SECONDS:-20}
-
-if [[ ! -f "$DSH_REPO/apps/cli/package.json" ]]; then
-  printf 'profile smoke: DSH_REPO must contain apps/cli/package.json: %s\n' "$DSH_REPO" >&2
-  exit 2
-fi
-
-if [[ -f "$DSH_REPO/apps/cli/lib/bin.js" ]]; then
-  dsh_command=(node --expose-internals apps/cli/lib/bin.js)
-elif [[ -d "$DSH_REPO/node_modules/tsx" ]]; then
-  dsh_command=(node --expose-internals --import tsx/esm apps/cli/src/bin.ts)
-else
-  printf 'profile smoke: DSH CLI is not built and node_modules/tsx is absent; run pnpm install in %s\n' "$DSH_REPO" >&2
-  exit 2
-fi
+profile_name=${DSH_PROFILE_SMOKE_PROFILE:-tui}
 
 home=$(mktemp -d)
 child=''
@@ -34,15 +20,19 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-artifact=$(nix build --print-out-paths ".#packages.x86_64-linux.tui")
+if ! dsh_artifact=$(nix build --no-link --print-out-paths ".#packages.x86_64-linux.dsh"); then
+  printf 'profile smoke: nix build failed for packaged dsh\n' >&2
+  exit 2
+fi
+if ! artifact=$(nix build --no-link --print-out-paths ".#packages.x86_64-linux.$profile_name"); then
+  printf 'profile smoke: nix build failed for %s profile\n' "$profile_name" >&2
+  exit 2
+fi
 mkdir -p "$home/profiles"
-cp -a "$artifact" "$home/profiles/tui"
-chmod -R u+w "$home/profiles/tui"
+cp -a "$artifact" "$home/profiles/$profile_name"
+chmod -R u+w "$home/profiles/$profile_name"
 
-(
-  cd "$DSH_REPO"
-  exec env DSH_HOME="$home" "${dsh_command[@]}" --profile tui
-) >"$stdout_file" 2>"$stderr_file" &
+env DSH_HOME="$home" "$dsh_artifact/bin/dsh" --profile "$profile_name" >"$stdout_file" 2>"$stderr_file" &
 child=$!
 
 printf 'activated\n' >"$expected_file"

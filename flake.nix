@@ -10,7 +10,7 @@
 #   nix flake check                         assertions + profile artifact shape
 #   nix eval .#profiles.tui --json          the declared profile (ordered layers)
 #   nix build .#packages.x86_64-linux.tui   the immutable profile directory
-#   ./scripts/profile-smoke.sh              boot it in a real dsh checkout
+#   ./scripts/profile-smoke.sh              boot it with the packaged dsh CLI
 #
 # Optional: examples/profiles/dsh-web.nix shows importing dsh's own shipped
 # bundles (non-flake repo input) with zero transcription; wire it in when a
@@ -32,9 +32,19 @@
 
       plugins = import ./lib/plugins.nix { inherit lib; };
       profilesLib = import ./lib/profiles.nix { inherit lib; };
-      tui = import ./examples/profiles/tui.nix { inherit lib plugins profilesLib; };
+      inBoxNames = [
+        "@deepseek-ai/dsh-base"
+        "@deepseek-ai/dsh-web-app"
+        "@deepseek-ai/dsh-headless"
+      ];
+      tui = import ./examples/profiles/tui.nix {
+        inherit plugins profilesLib inBoxNames;
+      };
+      tui-spec = import ./examples/profiles/tui-spec.nix {
+        inherit profilesLib inBoxNames;
+      };
 
-      profiles = { inherit tui; };
+      profiles = { inherit tui tui-spec; };
     in
     {
       inherit lib plugins profilesLib profiles;
@@ -50,27 +60,42 @@
             inherit pkgs;
             profile = profiles.tui;
           };
+
+          tui-spec = profilesLib.buildProfileBundle {
+            inherit pkgs;
+            profile = profiles.tui-spec;
+          };
         });
 
       checks = forAllSystems (system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
-          profile = profiles.tui;
-          artifact = self.packages.${system}.tui;
-          expectedLayers = builtins.toJSON profile.layers;
-          bundlePaths = map (plugin: "${plugin.packageName}") profile.plugins;
+          tuiArtifact = self.packages.${system}.tui;
+          tuiSpecArtifact = self.packages.${system}.tui-spec;
+          expectedLayers = builtins.toJSON [ "@dsh-nix/tui-core" ];
         in {
           profile-tui = pkgs.runCommand "dsh-profile-tui-check" {
             nativeBuildInputs = [ pkgs.jq ];
           } ''
-            package_json=${artifact}/package.json
+            package_json=${tuiArtifact}/package.json
             actual_layers=$(jq -c '.dsh.profile.bundles' "$package_json")
             expected_layers=${lib.escapeShellArg expectedLayers}
             test "$actual_layers" = "$expected_layers"
 
-            ${lib.concatMapStringsSep "\n" (packageName: ''
-              test -L ${lib.escapeShellArg "${artifact}/node_modules/${packageName}"}
-            '') bundlePaths}
+            test -L ${tuiArtifact}/node_modules/@dsh-nix/tui-core
+
+            touch "$out"
+          '';
+
+          profile-tui-spec = pkgs.runCommand "dsh-profile-tui-spec-check" {
+            nativeBuildInputs = [ pkgs.jq ];
+          } ''
+            package_json=${tuiSpecArtifact}/package.json
+            actual_layers=$(jq -c '.dsh.profile.bundles' "$package_json")
+            expected_layers=${lib.escapeShellArg expectedLayers}
+            test "$actual_layers" = "$expected_layers"
+            test -L ${tuiSpecArtifact}/node_modules/@dsh-nix/tui-core
+            test -L ${tuiSpecArtifact}/node_modules/@dsh-nix
 
             touch "$out"
           '';
