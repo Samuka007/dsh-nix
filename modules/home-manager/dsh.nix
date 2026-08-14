@@ -103,8 +103,8 @@ in
 
     package = lib.mkOption {
       type = lib.types.package;
-      default = pkgs.callPackage ../../pkgs/dsh.nix { src = dshSrc; };
-      defaultText = "pkgs.callPackage (dsh-nix)/pkgs/dsh.nix { src = <dsh input>; }";
+      default = pkgs.dsh or (pkgs.callPackage ../../pkgs/dsh.nix { src = dshSrc; });
+      defaultText = "pkgs.dsh (via inputs.dsh-nix.overlays.default) or callPackage fallback";
       description = "The dsh CLI package to install.";
     };
 

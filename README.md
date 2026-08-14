@@ -28,6 +28,20 @@ so removal is declarative and resolution failures surface at `nix build`.
 
 ## Usage
 
+### Overlay
+
+```nix
+# nixos configuration:
+imports = [ inputs.dsh-nix.nixosModules.default ];   # or:
+nixpkgs.overlays = [ inputs.dsh-nix.overlays.default ];
+
+# now pkgs.dsh is available everywhere:
+environment.systemPackages = [ pkgs.dsh ];
+```
+
+The Home Manager module's `package` option defaults to `pkgs.dsh` when the
+overlay is applied, falling back to a self-contained `callPackage` build.
+
 ### Home Manager
 
 ```nix

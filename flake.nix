@@ -51,9 +51,23 @@
         inherit profilesLib inBoxNames;
         dshSrc = dsh;
       };
+
+      # `pkgs.dsh` for any consumer applying the overlay.
+      overlay = final: prev: {
+        dsh = final.callPackage ./pkgs/dsh.nix { src = dsh; };
+      };
     in
     {
       inherit lib plugins profilesLib profiles homeManagerModules;
+      inherit overlay;
+
+      overlays.default = overlay;
+
+      # Convenience: importing this NixOS module wires the overlay into
+      # nixpkgs, so `pkgs.dsh` resolves everywhere on the system.
+      nixosModules.default = { config, lib, ... }: {
+        nixpkgs.overlays = [ overlay ];
+      };
 
       packages = forAllSystems (system:
         let
