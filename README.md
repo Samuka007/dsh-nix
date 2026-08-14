@@ -90,6 +90,10 @@ nix build .#packages.x86_64-linux.tui-spec   # example: spec-resolved profile
 nix eval .#profiles.tui-spec --json          # the declaration
 ```
 
+The package also ships `dsh-acp-demo`, the ACP automation server app
+(JSON-RPC over stdio; supply a leaf `cordis.yml` via `--config`, e.g. the
+upstream `examples/acp-agent/cordis.yml`).
+
 ## Verification
 
 ```sh

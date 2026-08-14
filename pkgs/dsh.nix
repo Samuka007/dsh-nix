@@ -67,6 +67,12 @@ stdenv.mkDerivation {
       --add-flags "--expose-internals" \
       --add-flags "$out/apps/cli/lib/bin.js" \
       --append-flags ""
+    # ACP automation server app: JSON-RPC stdio bin over the agent spine.
+    # Same HMR internals requirement as the CLI.
+    makeBinaryWrapper "${nodejs}/bin/node" "$out/bin/dsh-acp-demo" \
+      --add-flags "--expose-internals" \
+      --add-flags "$out/packages/examples/acp-demo/lib/bin.js" \
+      --append-flags ""
     runHook postInstall
   '';
 
