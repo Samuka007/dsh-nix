@@ -12,6 +12,8 @@
 , pnpmConfigHook
 , fetchPnpmDeps
 , makeBinaryWrapper
+, python3
+, node-gyp
 , src
 }:
 
@@ -28,12 +30,24 @@ stdenv.mkDerivation {
   pname = "dsh";
   inherit version src;
 
-  nativeBuildInputs = [ nodejs pnpm pnpmConfigHook makeBinaryWrapper ];
+  nativeBuildInputs = [ nodejs pnpm pnpmConfigHook makeBinaryWrapper python3 node-gyp ];
   inherit pnpmDeps;
 
   buildPhase = ''
     runHook preBuild
     pnpm install --offline --frozen-lockfile
+    # node-pty ships no linux prebuilds in its npm tarball, so its install
+    # script must fall back to node-gyp — which needs python3 and the node
+    # headers. Build it explicitly: pty.node and the unix spawn-helper both
+    # come out of this rebuild, and the dsh patch loads both from
+    # build/Release.
+    (
+      cd node_modules/.pnpm/node-pty@*/node_modules/node-pty
+      export HOME="$TMPDIR"
+      export npm_config_nodedir=${nodejs}
+      export npm_config_python=python3
+      node-gyp rebuild
+    )
     pnpm run build
     runHook postBuild
   '';
