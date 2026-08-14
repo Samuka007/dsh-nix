@@ -21,6 +21,14 @@ A profile's `plugins` list accepts three kinds, mixed in any order:
 | pnpm spec | `"github:someone/plugin"` | fixed-output derivation runs `pnpm add` at build time; pin with `specsHash` |
 | Nix package/path | `pkgs.fetchFromGitHub { ... }` or `./my-plugin` | symlinked into the profile; carries its own dependency closure |
 
+In-box layers carry a build-time dependency contract: `dsh-web-app` and
+`dsh-headless` override rows of `dsh-base`'s insert tree, so a profile using
+either must list `@deepseek-ai/dsh-base` before it. `mkProfileBundle` checks
+the ordered in-box layers against an explicit table (`inBoxDependencies` in
+`lib/profiles.nix`) and `throw`s at evaluation time otherwise — the runtime
+fail-loud becomes a `nix build` failure. Only in-box string entries are
+validated; nix-path and spec entries carry their own dependency closure.
+
 Layer registration (which plugins join `dsh.profile.bundles`) is a pure
 build-time reconcile that reads each resolved package's `dsh.bundle.patch`
 declaration — `dsh plugin`'s install/resolve/reconcile is replaced wholesale,

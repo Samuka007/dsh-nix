@@ -132,6 +132,29 @@
             ${pkgs.jq}/bin/jq -e '.all == true' "$TMPDIR/result.json" > /dev/null
             touch "$out"
           '';
+
+          profile-fail-loud = pkgs.runCommand "dsh-profile-fail-loud-check" {
+            src = ./.;
+            nativeBuildInputs = [ pkgs.nix pkgs.jq ];
+          } ''
+            cd "$src"
+            NIX_STATE_DIR="$TMPDIR/nix-state" \
+              ${pkgs.nix}/bin/nix-instantiate --eval --strict --json \
+              --arg pkgs 'import ${pkgs.path} {}' \
+              tests/profile-fail-loud.nix > "$TMPDIR/result.json"
+            ${pkgs.jq}/bin/jq -e '.ok == true' "$TMPDIR/result.json" > /dev/null
+            # The counterexample must throw naming the missing layer; the
+            # message lives on stderr, which tryEval cannot surface.
+            if NIX_STATE_DIR="$TMPDIR/nix-state" \
+              ${pkgs.nix}/bin/nix-instantiate --eval --strict \
+              --arg pkgs 'import ${pkgs.path} {}' \
+              tests/profile-fail-loud-throw.nix >/dev/null 2>"$TMPDIR/throw.log"; then
+              echo "profile-fail-loud: counterexample did not throw" >&2
+              exit 1
+            fi
+            grep -q 'must precede @deepseek-ai/dsh-web-app' "$TMPDIR/throw.log"
+            touch "$out"
+          '';
         });
 
       devShells = forAllSystems (system:

@@ -4,6 +4,47 @@ let
   pluginsLib = import ./plugins.nix { inherit lib; };
   inherit (pluginsLib) classifyPlugin fetchSpecs;
 
+  # Explicit in-box layer dependency table (issue #1).  A layer named as a
+  # key must not appear in a profile unless every listed layer precedes it
+  # among the profile's in-box entries.  Only in-box string entries are
+  # validated; nix-path and spec entries carry their own dependency closure
+  # and cannot be inspected statically.
+  #
+  # Rationale (upstream dsh, pinned 47f9438): @deepseek-ai/dsh-base is the
+  # only core insert layer (its cordis.patch.yml is a 78-line insert);
+  # web-app and headless patches override base rows by id and npm-declare no
+  # dependency on it.  Omitting base boots dsh into a runtime fail-loud
+  # (assertEntriesActivated lists the missing services); this table turns
+  # that into an evaluation-time failure naming the missing layer.
+  inBoxDependencies = {
+    "@deepseek-ai/dsh-web-app" = [ "@deepseek-ai/dsh-base" ];
+    "@deepseek-ai/dsh-headless" = [ "@deepseek-ai/dsh-base" ];
+  };
+
+  # Validate an ordered in-box layer list against inBoxDependencies.
+  # Checking each layer against the set already seen yields transitivity for
+  # free: a chain (a requires b, b requires c) needs only its direct pairs in
+  # the table.  Returns true or throws with every violation.
+  checkInBoxDependencies = profileName: inBoxLayers:
+    let
+      depsOf = name: inBoxDependencies.${name} or [ ];
+      step = { satisfied, errors }: name:
+        let
+          missing = builtins.filter (dep: !builtins.elem dep satisfied) (depsOf name);
+        in
+        {
+          satisfied = satisfied ++ [ name ];
+          errors = errors ++ map (dep:
+            "profile ${profileName}: in-box layer ${dep} must precede ${name} "
+            + "(declared in inBoxDependencies in lib/profiles.nix)") missing;
+        };
+      result = builtins.foldl' step { satisfied = [ ]; errors = [ ]; } inBoxLayers;
+    in
+    if result.errors == [ ] then
+      true
+    else
+      throw "dsh profile bundle: ${builtins.concatStringsSep "\n" result.errors}";
+
   mkProfileBundle =
     {
       name,
@@ -18,6 +59,8 @@ let
       nixPlugins = map (entry: entry.plugin)
         (builtins.filter (entry: entry.kind == "nix") classified);
       packageNames = map (plugin: plugin.packageName) nixPlugins;
+      inBox = map (entry: entry.name)
+        (builtins.filter (entry: entry.kind == "in-box") classified);
       checkedName =
         if name == null || name == "" then
           throw "dsh profile bundle: name must not be empty"
@@ -30,11 +73,11 @@ let
           throw "dsh profile bundle: plugin packageNames must be unique";
     in
     assert uniquePackageNames;
+    assert checkInBoxDependencies checkedName inBox;
     {
       inherit name userPatchesFile userPatches specsHash;
       plugins = classified;
-      inBox = map (entry: entry.name)
-        (builtins.filter (entry: entry.kind == "in-box") classified);
+      inherit inBox;
       inherit nixPlugins;
       specs = map (entry: entry.spec)
         (builtins.filter (entry: entry.kind == "spec") classified);
