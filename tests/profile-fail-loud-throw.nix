@@ -1,7 +1,7 @@
 # Counterexample for build-time fail-loud (issue #1): evaluating this file
-# MUST throw with the missing-layer name in the message.  The flake check
+# MUST throw with the skipped-override row in the message.  The flake check
 # runs nix-instantiate on it, expects a non-zero exit, and greps stderr for
-# "@deepseek-ai/dsh-base".
+# the first override id web-app's patch targets ("system-prompt").
 { pkgs }:
 
 let

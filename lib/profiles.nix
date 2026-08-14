@@ -4,41 +4,40 @@ let
   pluginsLib = import ./plugins.nix { inherit lib; };
   inherit (pluginsLib) classifyPlugin fetchSpecs;
 
-  # Explicit in-box layer dependency table (issue #1).  A layer named as a
-  # key must not appear in a profile unless every listed layer precedes it
-  # among the profile's in-box entries.  Only in-box string entries are
-  # validated; nix-path and spec entries carry their own dependency closure
-  # and cannot be inspected statically.
-  #
-  # Rationale (upstream dsh, pinned 47f9438): @deepseek-ai/dsh-base is the
-  # only core insert layer (its cordis.patch.yml is a 78-line insert);
-  # web-app and headless patches override base rows by id and npm-declare no
-  # dependency on it.  Omitting base boots dsh into a runtime fail-loud
-  # (assertEntriesActivated lists the missing services); this table turns
-  # that into an evaluation-time failure naming the missing layer.
-  inBoxDependencies = {
-    "@deepseek-ai/dsh-web-app" = [ "@deepseek-ai/dsh-base" ];
-    "@deepseek-ai/dsh-headless" = [ "@deepseek-ai/dsh-base" ];
-  };
+  # Ordered patch-entry data for the in-box bundles, extracted verbatim from
+  # the pinned dsh source (lib/in-box-patches.nix).  The check below replays
+  # dsh's own patch semantics — no package-level knowledge is hard-coded.
+  inBoxPatchEntries = (import ./in-box-patches.nix).inBoxPatchEntries;
 
-  # Validate an ordered in-box layer list against inBoxDependencies.
-  # Checking each layer against the set already seen yields transitivity for
-  # free: a chain (a requires b, b requires c) needs only its direct pairs in
-  # the table.  Returns true or throws with every violation.
-  checkInBoxDependencies = profileName: inBoxLayers:
+  # Replay dsh's applyEntryPatches semantics (packages/include/src/index.ts)
+  # over the profile's ordered in-box layers: an `override` entry (a
+  # top-level patch row, which replaces or disables a row) must find its id
+  # already defined by an earlier layer's `insert`; otherwise dsh skips it
+  # with a warning and the patch silently never applies.  `insert` entries
+  # define rows and always succeed.  A violation is a deterministic runtime
+  # no-op, so it fails here at evaluation time instead.
+  #
+  # Only in-box string entries participate: nix-path and spec entries carry
+  # their own dependency closure and cannot be inspected statically.
+  checkInBoxPatches = profileName: inBoxLayers:
     let
-      depsOf = name: inBoxDependencies.${name} or [ ];
-      step = { satisfied, errors }: name:
+      entriesOf = name: inBoxPatchEntries.${name} or [ ];
+      step = { defined, errors }: name:
         let
-          missing = builtins.filter (dep: !builtins.elem dep satisfied) (depsOf name);
+          entries = entriesOf name;
+          missing = builtins.filter (entry:
+            entry.kind == "override" && !builtins.elem entry.id defined) entries;
+          newDefined = defined ++ map (entry: entry.id)
+            (builtins.filter (entry: entry.kind == "insert") entries);
         in
         {
-          satisfied = satisfied ++ [ name ];
-          errors = errors ++ map (dep:
-            "profile ${profileName}: in-box layer ${dep} must precede ${name} "
-            + "(declared in inBoxDependencies in lib/profiles.nix)") missing;
+          defined = newDefined;
+          errors = errors ++ map (entry:
+            "profile ${profileName}: in-box layer ${name} overrides row "
+            + "${entry.id}, which no earlier layer defines — dsh would skip "
+            + "the patch with a warning and boot without it") missing;
         };
-      result = builtins.foldl' step { satisfied = [ ]; errors = [ ]; } inBoxLayers;
+      result = builtins.foldl' step { defined = [ ]; errors = [ ]; } inBoxLayers;
     in
     if result.errors == [ ] then
       true
@@ -73,7 +72,7 @@ let
           throw "dsh profile bundle: plugin packageNames must be unique";
     in
     assert uniquePackageNames;
-    assert checkInBoxDependencies checkedName inBox;
+    assert checkInBoxPatches checkedName inBox;
     {
       inherit name userPatchesFile userPatches specsHash;
       plugins = classified;
