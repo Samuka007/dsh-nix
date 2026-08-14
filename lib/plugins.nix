@@ -50,7 +50,7 @@ let
     else if builtins.isAttrs plugin && plugin ? packageName && plugin ? packagePath then
       { kind = "nix"; inherit plugin; }
     else
-      { kind = "nix"; plugin = mkPluginBundle plugin; };
+      { kind = "nix"; plugin = mkPluginBundle { path = plugin; }; };
 
   fetchSpecs =
     { pkgs, specs, hash ? "" }:

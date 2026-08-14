@@ -45,9 +45,15 @@
       };
 
       profiles = { inherit tui tui-spec; };
+
+      homeManagerModules.dsh = import ./modules/home-manager/dsh.nix {
+        pluginsLib = plugins;
+        inherit profilesLib inBoxNames;
+        dshSrc = dsh;
+      };
     in
     {
-      inherit lib plugins profilesLib profiles;
+      inherit lib plugins profilesLib profiles homeManagerModules;
 
       packages = forAllSystems (system:
         let
@@ -97,6 +103,19 @@
             test -L ${tuiSpecArtifact}/node_modules/@dsh-nix/tui-core
             test -L ${tuiSpecArtifact}/node_modules/@dsh-nix
 
+            touch "$out"
+          '';
+
+          home-module = pkgs.runCommand "dsh-home-module-check" {
+            src = ./.;
+            nativeBuildInputs = [ pkgs.nix ];
+          } ''
+            cd "$src"
+            NIX_STATE_DIR="$TMPDIR/nix-state" \
+              ${pkgs.nix}/bin/nix-instantiate --eval --strict --json \
+              --arg pkgs 'import ${pkgs.path} {}' \
+              tests/home-module.nix > "$TMPDIR/result.json"
+            ${pkgs.jq}/bin/jq -e '.all == true' "$TMPDIR/result.json" > /dev/null
             touch "$out"
           '';
         });
