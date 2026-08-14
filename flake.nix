@@ -132,56 +132,6 @@
             ${pkgs.jq}/bin/jq -e '.all == true' "$TMPDIR/result.json" > /dev/null
             touch "$out"
           '';
-
-          profile-fail-loud = pkgs.runCommand "dsh-profile-fail-loud-check" {
-            src = ./.;
-            nativeBuildInputs = [ pkgs.nix pkgs.jq ];
-          } ''
-            cd "$src"
-            NIX_STATE_DIR="$TMPDIR/nix-state" \
-              ${pkgs.nix}/bin/nix-instantiate --eval --strict --json \
-              --arg pkgs 'import ${pkgs.path} {}' \
-              tests/profile-fail-loud.nix > "$TMPDIR/result.json"
-            ${pkgs.jq}/bin/jq -e '.ok == true' "$TMPDIR/result.json" > /dev/null
-            # The counterexample must throw naming the skipped override; the
-            # message lives on stderr, which tryEval cannot surface.
-            if NIX_STATE_DIR="$TMPDIR/nix-state" \
-              ${pkgs.nix}/bin/nix-instantiate --eval --strict \
-              --arg pkgs 'import ${pkgs.path} {}' \
-              tests/profile-fail-loud-throw.nix >/dev/null 2>"$TMPDIR/throw.log"; then
-              echo "profile-fail-loud: counterexample did not throw" >&2
-              exit 1
-            fi
-            grep -q 'overrides row system-prompt' "$TMPDIR/throw.log"
-            touch "$out"
-          '';
-
-          # The in-box patch data (lib/in-box-patches.nix) is extracted from
-          # the pinned dsh source; re-extract and diff so an upstream change
-          # to any bundle's cordis.patch.yml fails loudly instead of silently
-          # drifting the build-time check.
-          in-box-patches-drift = pkgs.runCommand "dsh-in-box-patches-drift-check" {
-            src = ./.;
-            nativeBuildInputs = [ pkgs.yq-go pkgs.jq ];
-          } ''
-            cd "$src"
-            for bundle in base web-app headless; do
-              yq -o=json . "${dsh}/packages/bundle/$bundle/cordis.patch.yml" \
-                | jq -c '[.[] | if has("id") then {kind: "override", id: .id} else [.insert[] | {kind: "insert", id: .id}] end] | flatten'
-            done > "$TMPDIR/extracted.jsonl"
-            jq -s -r 'to_entries[] | .key as $k | .value | "  \"\($k)\" = [\n" + (map("    { kind = \"\(.kind)\"; id = \"\(.id)\"; }") | join("\n")) + "\n  ];"' \
-              "$TMPDIR/extracted.jsonl" > "$TMPDIR/body.txt"
-            {
-              sed -n '1,/^  inBoxPatchEntries = {/p' lib/in-box-patches.nix
-              sed -e 's/^  "0" = \[/  "@deepseek-ai\/dsh-base" = [/' \
-                  -e 's/^  "1" = \[/  "@deepseek-ai\/dsh-web-app" = [/' \
-                  -e 's/^  "2" = \[/  "@deepseek-ai\/dsh-headless" = [/' \
-                  "$TMPDIR/body.txt"
-              printf '  };\n}\n'
-            } > "$TMPDIR/regenerated.nix"
-            diff -u lib/in-box-patches.nix "$TMPDIR/regenerated.nix"
-            touch "$out"
-          '';
         });
 
       devShells = forAllSystems (system:

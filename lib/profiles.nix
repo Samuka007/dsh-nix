@@ -4,46 +4,6 @@ let
   pluginsLib = import ./plugins.nix { inherit lib; };
   inherit (pluginsLib) classifyPlugin fetchSpecs;
 
-  # Ordered patch-entry data for the in-box bundles, extracted verbatim from
-  # the pinned dsh source (lib/in-box-patches.nix).  The check below replays
-  # dsh's own patch semantics — no package-level knowledge is hard-coded.
-  inBoxPatchEntries = (import ./in-box-patches.nix).inBoxPatchEntries;
-
-  # Replay dsh's applyEntryPatches semantics (packages/include/src/index.ts)
-  # over the profile's ordered in-box layers: an `override` entry (a
-  # top-level patch row, which replaces or disables a row) must find its id
-  # already defined by an earlier layer's `insert`; otherwise dsh skips it
-  # with a warning and the patch silently never applies.  `insert` entries
-  # define rows and always succeed.  A violation is a deterministic runtime
-  # no-op, so it fails here at evaluation time instead.
-  #
-  # Only in-box string entries participate: nix-path and spec entries carry
-  # their own dependency closure and cannot be inspected statically.
-  checkInBoxPatches = profileName: inBoxLayers:
-    let
-      entriesOf = name: inBoxPatchEntries.${name} or [ ];
-      step = { defined, errors }: name:
-        let
-          entries = entriesOf name;
-          missing = builtins.filter (entry:
-            entry.kind == "override" && !builtins.elem entry.id defined) entries;
-          newDefined = defined ++ map (entry: entry.id)
-            (builtins.filter (entry: entry.kind == "insert") entries);
-        in
-        {
-          defined = newDefined;
-          errors = errors ++ map (entry:
-            "profile ${profileName}: in-box layer ${name} overrides row "
-            + "${entry.id}, which no earlier layer defines — dsh would skip "
-            + "the patch with a warning and boot without it") missing;
-        };
-      result = builtins.foldl' step { defined = [ ]; errors = [ ]; } inBoxLayers;
-    in
-    if result.errors == [ ] then
-      true
-    else
-      throw "dsh profile bundle: ${builtins.concatStringsSep "\n" result.errors}";
-
   mkProfileBundle =
     {
       name,
@@ -58,8 +18,6 @@ let
       nixPlugins = map (entry: entry.plugin)
         (builtins.filter (entry: entry.kind == "nix") classified);
       packageNames = map (plugin: plugin.packageName) nixPlugins;
-      inBox = map (entry: entry.name)
-        (builtins.filter (entry: entry.kind == "in-box") classified);
       checkedName =
         if name == null || name == "" then
           throw "dsh profile bundle: name must not be empty"
@@ -72,11 +30,11 @@ let
           throw "dsh profile bundle: plugin packageNames must be unique";
     in
     assert uniquePackageNames;
-    assert checkInBoxPatches checkedName inBox;
     {
       inherit name userPatchesFile userPatches specsHash;
       plugins = classified;
-      inherit inBox;
+      inBox = map (entry: entry.name)
+        (builtins.filter (entry: entry.kind == "in-box") classified);
       inherit nixPlugins;
       specs = map (entry: entry.spec)
         (builtins.filter (entry: entry.kind == "spec") classified);

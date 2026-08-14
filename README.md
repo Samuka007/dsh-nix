@@ -21,17 +21,6 @@ A profile's `plugins` list accepts three kinds, mixed in any order:
 | pnpm spec | `"github:someone/plugin"` | fixed-output derivation runs `pnpm add` at build time; pin with `specsHash` |
 | Nix package/path | `pkgs.fetchFromGitHub { ... }` or `./my-plugin` | symlinked into the profile; carries its own dependency closure |
 
-In-box layers are validated against dsh's own patch semantics, not a
-hard-coded package table. `lib/in-box-patches.nix` records each in-box
-bundle's `cordis.patch.yml` entries verbatim (extracted from the pinned dsh
-source; `checks.in-box-patches-drift` re-extracts and diffs so upstream
-changes fail loudly). `mkProfileBundle` replays `applyEntryPatches` over the
-profile's ordered in-box layers: an `override` row whose id no earlier layer
-defines would be silently skipped at runtime, so it `throw`s at evaluation
-time — the runtime fail-loud becomes a `nix build` failure. Only in-box
-string entries are validated; nix-path and spec entries carry their own
-dependency closure.
-
 Layer registration (which plugins join `dsh.profile.bundles`) is a pure
 build-time reconcile that reads each resolved package's `dsh.bundle.patch`
 declaration — `dsh plugin`'s install/resolve/reconcile is replaced wholesale,
