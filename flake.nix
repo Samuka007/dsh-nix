@@ -43,8 +43,14 @@
       tui-spec = import ./examples/profiles/tui-spec.nix {
         inherit profilesLib inBoxNames;
       };
+      web = import ./examples/profiles/web.nix {
+        inherit profilesLib inBoxNames;
+      };
+      headless = import ./examples/profiles/headless.nix {
+        inherit profilesLib inBoxNames;
+      };
 
-      profiles = { inherit tui tui-spec; };
+      profiles = { inherit tui tui-spec web headless; };
 
       homeManagerModules.dsh = import ./modules/home-manager/dsh.nix {
         pluginsLib = plugins;
@@ -84,6 +90,16 @@
           tui-spec = profilesLib.buildProfileBundle {
             inherit pkgs;
             profile = profiles.tui-spec;
+          };
+
+          web = profilesLib.buildProfileBundle {
+            inherit pkgs;
+            profile = profiles.web;
+          };
+
+          headless = profilesLib.buildProfileBundle {
+            inherit pkgs;
+            profile = profiles.headless;
           };
         });
 
@@ -130,6 +146,64 @@
               --arg pkgs 'import ${pkgs.path} {}' \
               tests/home-module.nix > "$TMPDIR/result.json"
             ${pkgs.jq}/bin/jq -e '.all == true' "$TMPDIR/result.json" > /dev/null
+            touch "$out"
+          '';
+
+          # Build-time fail-loud: boot each in-box profile with dsh's own
+          # boot() (which runs assertEntriesActivated) and dispose.  A
+          # profile that would fail at runtime — missing services, failed
+          # activation — fails `nix build` here instead.
+          profile-boot-web = pkgs.runCommand "dsh-profile-boot-web-check" {
+            nativeBuildInputs = [ pkgs.nodejs ];
+          } ''
+            home="$TMPDIR/home"
+            mkdir -p "$home/profiles"
+            cp -a ${self.packages.${system}.web} "$home/profiles/web"
+            chmod -R u+w "$home/profiles/web"
+            ${pkgs.nodejs}/bin/node --expose-internals \
+              ${./scripts/check-profile.mjs} \
+              ${self.packages.${system}.dsh} web "$home" --port 0 \
+              > "$TMPDIR/check.log" 2>&1
+            grep -q 'CHECK-OK' "$TMPDIR/check.log"
+            touch "$out"
+          '';
+
+          profile-boot-headless = pkgs.runCommand "dsh-profile-boot-headless-check" {
+            nativeBuildInputs = [ pkgs.nodejs ];
+          } ''
+            home="$TMPDIR/home"
+            mkdir -p "$home/profiles"
+            cp -a ${self.packages.${system}.headless} "$home/profiles/headless"
+            chmod -R u+w "$home/profiles/headless"
+            ${pkgs.nodejs}/bin/node --expose-internals \
+              ${./scripts/check-profile.mjs} \
+              ${self.packages.${system}.dsh} headless "$home" "check" \
+              > "$TMPDIR/check.log" 2>&1
+            grep -q 'CHECK-OK' "$TMPDIR/check.log"
+            touch "$out"
+          '';
+
+          # Counterexample: web-app without base must fail the boot check
+          # with dsh's own fail-loud (pending services), proving the check
+          # catches the composition error at build time.
+          profile-boot-web-nobase = pkgs.runCommand "dsh-profile-boot-web-nobase-check" {
+            nativeBuildInputs = [ pkgs.nodejs pkgs.jq ];
+          } ''
+            home="$TMPDIR/home"
+            mkdir -p "$home/profiles"
+            cp -a ${self.packages.${system}.web} "$home/profiles/web-nobase"
+            chmod -R u+w "$home/profiles/web-nobase"
+            jq '.dsh.profile.bundles = ["@deepseek-ai/dsh-web-app"]' \
+              "$home/profiles/web-nobase/package.json" > "$TMPDIR/package.json"
+            mv "$TMPDIR/package.json" "$home/profiles/web-nobase/package.json"
+            if ${pkgs.nodejs}/bin/node --expose-internals \
+              ${./scripts/check-profile.mjs} \
+              ${self.packages.${system}.dsh} web-nobase "$home" --port 0 \
+              > "$TMPDIR/check.log" 2>&1; then
+              echo "profile-boot-web-nobase: expected fail-loud, got success" >&2
+              exit 1
+            fi
+            grep -q 'did not activate' "$TMPDIR/check.log"
             touch "$out"
           '';
         });

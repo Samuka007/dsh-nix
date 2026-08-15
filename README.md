@@ -26,6 +26,16 @@ build-time reconcile that reads each resolved package's `dsh.bundle.patch`
 declaration — `dsh plugin`'s install/resolve/reconcile is replaced wholesale,
 so removal is declarative and resolution failures surface at `nix build`.
 
+In-box profiles get a **build-time boot check**: `checks.profile-boot-web`
+and `checks.profile-boot-headless` boot the composed profile with dsh's own
+`boot()` (which runs `assertEntriesActivated`) inside the Nix sandbox and
+dispose immediately. A profile that would fail at runtime — missing
+services, failed activation — fails `nix build` instead. The check is the
+real dsh fail-loud, not a reimplementation: `scripts/check-profile.mjs`
+loads the profile exactly as `dsh --profile` would and lets dsh's own
+audit decide. `checks.profile-boot-web-nobase` proves the check catches a
+web-app-without-base composition (8 pending entries).
+
 ## Usage
 
 ### Overlay
